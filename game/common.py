@@ -9,7 +9,7 @@ PADDLE_THICK = 12
 PADDLE_SPEED = 300.0  # px/s
 
 BALL_RADIUS = 8
-BALL_SPEED = 260.0  # px/s
+BALL_SPEED = 160.0  # px/s
 
 TICK_RATE = 60.0  # physics Hz
 

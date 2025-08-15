@@ -3,6 +3,7 @@ from .common import (
     WIDTH, HEIGHT, PADDLE_LEN, PADDLE_THICK, BALL_RADIUS,
     paddle_rect, PLAYER_EDGES
 )
+from .server import GameServer
 
 # Render helpers
 def draw_text(screen, txt, pos, size=24, color=(255,255,255)):
@@ -10,7 +11,10 @@ def draw_text(screen, txt, pos, size=24, color=(255,255,255)):
     s = font.render(txt, True, color)
     screen.blit(s, pos)
 
-def run_pygame_loop(role: str, server=None, client=None):
+def run_pygame_loop(role: str=None, server=None, client=None, mode: str='network'):
+    """
+    role: 'A' or 'B' when networked. mode: 'network' or 'local'
+    """
     """
     role: "A" for host player's renderer, "B" for client
     server: GameServer when role=="A"
@@ -22,6 +26,21 @@ def run_pygame_loop(role: str, server=None, client=None):
     clock = pygame.time.Clock()
 
     # Key mapping per role
+    if mode == 'local':
+        def get_input_local():
+            keys = pygame.key.get_pressed()
+            # Player A: top (A/D), right (W/S)
+            top = (-1 if keys[pygame.K_a] else 0) + (1 if keys[pygame.K_d] else 0)
+            right = (-1 if keys[pygame.K_w] else 0) + (1 if keys[pygame.K_s] else 0)
+            top = -1 if top < 0 else (1 if top > 0 else 0)
+            right = -1 if right < 0 else (1 if right > 0 else 0)
+            # Player B: bottom (Left/Right), left (Up/Down)
+            bottom = (-1 if keys[pygame.K_LEFT] else 0) + (1 if keys[pygame.K_RIGHT] else 0)
+            left   = (-1 if keys[pygame.K_UP] else 0) + (1 if keys[pygame.K_DOWN] else 0)
+            bottom = -1 if bottom < 0 else (1 if bottom > 0 else 0)
+            left   = -1 if left < 0 else (1 if left > 0 else 0)
+            return {"top": top, "right": right, "bottom": bottom, "left": left}
+
     if role == "A":
         # A: top (A/D), right (W/S)
         def get_input():
@@ -59,21 +78,37 @@ def run_pygame_loop(role: str, server=None, client=None):
                     server.toggle_pause()
 
         # Gather and send/apply inputs
-        inp = get_input()
-        if role == "A" and server is not None:
-            server.set_input_A(inp)
-            state = server.latest_state.get()
+        if mode == 'local':
+            inp = get_input_local()
+            # apply to server inputs directly
+            server.set_input_A({"top": inp['top'], "right": inp['right']})
+            with server._input_lock:
+                server.input_B = {"bottom": inp['bottom'], "left": inp['left']}
+            # step physics manually
+            # use fixed dt based on clock
+            dt = clock.get_time() / 1000.0
+            if dt <= 0:
+                dt = 1.0/60.0
+            if not server.paused:
+                server._apply_inputs(dt)
+                server._step_balls(dt)
+            state = server._make_state_obj(kind='state')
         else:
-            # client: send input to server
-            if client is not None:
-                try:
-                    client.send_input(inp)
-                except Exception:
-                    pass
-                state = client.state.get()
-                go = client.game_over.get()
-                if go is not None:
-                    game_over = go
+            inp = get_input()
+            if role == "A" and server is not None:
+                server.set_input_A(inp)
+                state = server.latest_state.get()
+            else:
+                # client: send input to server
+                if client is not None:
+                    try:
+                        client.send_input(inp)
+                    except Exception:
+                        pass
+                    state = client.state.get()
+                    go = client.game_over.get()
+                    if go is not None:
+                        game_over = go
 
         # Clear
         screen.fill((10, 12, 24))
