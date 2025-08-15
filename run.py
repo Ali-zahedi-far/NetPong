@@ -9,12 +9,25 @@ from game.game import run_pygame_loop
 DEFAULT_PORT = 50007
 
 def start_game(settings):
+    mode = settings.get("mode","local")
     role = settings["role"]  # "host" or "client"
     host_ip = settings["host_ip"]
     port = settings["port"]
     num_balls = settings["num_balls"]
     target_score = settings["target_score"]
     time_limit = settings["time_limit"]  # seconds; 0 = no limit
+
+    if mode == "local":
+        # Local single-screen multiplayer: instantiate server without network and run loop
+        from game.server import GameServer
+        server = GameServer(port=settings.get("port",50007), num_balls=settings.get("num_balls",1), target_score=settings.get("target_score",5), time_limit=settings.get("time_limit",0))
+        # Run pygame loop in local mode (pass mode="local")
+        try:
+            run_pygame_loop(role="A", server=server, client=None, mode="local")
+        finally:
+            try:
+                server.stop()
+            except: pass
 
     if role == "host":
         # Start server in background thread
@@ -39,6 +52,7 @@ def main():
     root = tk.Tk()
     root.title("NetPong Settings")
 
+    mode_var = tk.StringVar(value="local")
     role_var = tk.StringVar(value="host")
     ip_var = tk.StringVar(value="127.0.0.1")
     port_var = tk.IntVar(value=DEFAULT_PORT)
@@ -54,6 +68,10 @@ def main():
     ttk.Label(frm, text="Role:").grid(row=0, column=0, sticky="w")
     role_combo = ttk.Combobox(frm, textvariable=role_var, values=["host","client"], state="readonly", width=12)
     role_combo.grid(row=0, column=1, sticky="ew")
+
+    ttk.Label(frm, text="Mode:").grid(row=0, column=2, sticky="w")
+    mode_combo = ttk.Combobox(frm, textvariable=mode_var, values=["local","host","client"], state="readonly", width=10)
+    mode_combo.grid(row=0, column=3, sticky="ew")
 
     ttk.Label(frm, text="Host IP (for client):").grid(row=1, column=0, sticky="w")
     ip_entry = ttk.Entry(frm, textvariable=ip_var, width=18)
@@ -79,6 +97,12 @@ def main():
     status_lbl.grid(row=6, column=0, columnspan=2, sticky="w", pady=(8,0))
 
     def on_role_change(*_):
+        # disable ip/role when mode is local
+        if mode_var.get()=="local":
+            ip_entry.configure(state="disabled")
+            role_combo.configure(state="disabled")
+            return
+
         if role_var.get() == "host":
             ip_entry.configure(state="disabled")
         else:
@@ -89,6 +113,7 @@ def main():
     def on_start():
         try:
             settings = dict(
+                mode=mode_var.get(),
                 role=role_var.get(),
                 host_ip=ip_var.get(),
                 port=int(port_var.get()),
